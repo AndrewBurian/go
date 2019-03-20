@@ -246,12 +246,44 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		outreq.Header.Set("Upgrade", reqUpType)
 	}
 
-	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+	clientIP, _, ipErr := net.SplitHostPort(req.RemoteAddr)
+	if ipErr != nil {
+		clientIP = "unknown"
+	}
+
+	priorXIPs, hasX := outreq.Header["X-Forwarded-For"]
+	priorFwds, hasFwd := outreq.Header["Forwarded"]
+	clientProto := "http"
+	if req.TLS != nil {
+		clientProto = "https"
+	}
+
+	// build the Forwarded Header (RFC7239)
+	// - Honor a previous Forwarded header if set (ignore X-Forwarded-For)
+	// - Build a previous X-Forwarded-For into a Forwarded header if set
+	forward := fmt.Sprintf("for=%s; proto=%s; host=%s", clientIP, clientProto, req.Host)
+	if hasFwd {
+		forward = strings.Join(priorFwds, ", ") + ", " + forward
+	} else if hasX {
+		var ips []string
+		for i := range priorXIPs {
+			ips = append(ips, strings.Split(priorXIPs[i], ",")...)
+		}
+		for i := range ips {
+			ips[i] = "for=" + strings.TrimSpace(ips[i])
+		}
+		forward = strings.Join(ips, ", ") + ", " + forward
+	}
+	outreq.Header.Set("Forwarded", forward)
+
+	// legacy X-Forwarded-For header
+	// considers only prior X-Forwarded-For headers
+	if ipErr == nil {
 		// If we aren't the first proxy retain prior
 		// X-Forwarded-For information as a comma+space
 		// separated list and fold multiple headers into one.
-		if prior, ok := outreq.Header["X-Forwarded-For"]; ok {
-			clientIP = strings.Join(prior, ", ") + ", " + clientIP
+		if hasX {
+			clientIP = strings.Join(priorXIPs, ", ") + ", " + clientIP
 		}
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}

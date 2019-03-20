@@ -249,6 +249,97 @@ func TestXForwardedFor(t *testing.T) {
 	}
 }
 
+func TestForwarded(t *testing.T) {
+	const clientIP = "client-ip"
+	const host = "some-name"
+	const backendResponse = "I am the backend"
+	const backendStatus = 404
+	testCases := []struct {
+		desc              string
+		prevXForwarded    []string
+		prevForwarded     []string
+		expectedForwarded string
+	}{
+		{
+			desc:              "Nothing present",
+			expectedForwarded: "for=127.0.0.1; proto=http; host=some-name",
+		},
+		{
+			desc:              "X-Forwarded single entry",
+			prevXForwarded:    []string{"prev-fwd"},
+			expectedForwarded: "for=prev-fwd",
+		},
+		{
+			desc:              "X-Forwarded multi entry",
+			prevXForwarded:    []string{"prev1, prev2"},
+			expectedForwarded: "for=prev1, for=prev2",
+		},
+		{
+			desc:              "Multi X-Forwarded multi entry",
+			prevXForwarded:    []string{"prev1, prev2", "prev3,prev4"},
+			expectedForwarded: "for=prev1, for=prev2, for=prev3, for=prev4",
+		},
+		{
+			desc:              "Forwarded set",
+			prevForwarded:     []string{"for=prev"},
+			expectedForwarded: "for=prev",
+		},
+		{
+			desc:              "Forwarded multi",
+			prevForwarded:     []string{"for=prev1", "for=prev2"},
+			expectedForwarded: "for=prev1, for=prev2",
+		},
+		{
+			desc:              "Ignore X-Forwarded",
+			prevXForwarded:    []string{"badprev"},
+			prevForwarded:     []string{"for=prev1", "for=prev2"},
+			expectedForwarded: "for=prev1, for=prev2, for=127.0.0.1",
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Forwarded") == "" {
+					t.Errorf("didn't get Forwarded header")
+				}
+				t.Log(r.Header.Get("Forwarded"))
+				if !strings.Contains(r.Header.Get("Forwarded"), tC.expectedForwarded) {
+					t.Errorf("Forwarded didn't contain prior data")
+				}
+				w.WriteHeader(backendStatus)
+				w.Write([]byte(backendResponse))
+			}))
+			defer backend.Close()
+			backendURL, err := url.Parse(backend.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			proxyHandler := NewSingleHostReverseProxy(backendURL)
+			frontend := httptest.NewServer(proxyHandler)
+			defer frontend.Close()
+
+			getReq, _ := http.NewRequest("GET", frontend.URL, nil)
+			getReq.Host = host
+			getReq.Header.Set("Connection", "close")
+			getReq.Header["Forwarded"] = tC.prevForwarded
+			getReq.Header["X-Forwarded-For"] = tC.prevXForwarded
+
+			getReq.Close = true
+			res, err := frontend.Client().Do(getReq)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if g, e := res.StatusCode, backendStatus; g != e {
+				t.Errorf("got res.StatusCode %d; expected %d", g, e)
+			}
+			bodyBytes, _ := ioutil.ReadAll(res.Body)
+			if g, e := string(bodyBytes), backendResponse; g != e {
+				t.Errorf("got body %q; expected %q", g, e)
+			}
+		})
+	}
+}
+
 var proxyQueryTests = []struct {
 	baseSuffix string // suffix to add to backend URL
 	reqSuffix  string // suffix to add to frontend's request URL
