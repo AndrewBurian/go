@@ -270,7 +270,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			ips = append(ips, strings.Split(priorXIPs[i], ",")...)
 		}
 		for i := range ips {
-			ips[i] = "for=" + strings.TrimSpace(ips[i])
+			ips[i] = "for=" + escapeIPv6(strings.TrimSpace(ips[i]))
 		}
 		forward = strings.Join(ips, ", ") + ", " + forward
 	}
@@ -362,6 +362,13 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			rw.Header().Add(k, v)
 		}
 	}
+}
+
+func escapeIPv6(ip string) string {
+	if !strings.Contains(ip, ":") {
+		return ip
+	}
+	return fmt.Sprintf(`"[%s]"`, strings.Trim(ip, `"[]`))
 }
 
 var inOurTests bool // whether we're in our own tests

@@ -280,6 +280,16 @@ func TestForwarded(t *testing.T) {
 			expectedForwarded: "for=prev1, for=prev2, for=prev3, for=prev4",
 		},
 		{
+			desc:              "Quote unquoted and unbracketed ipv6 X-Forwarded",
+			prevXForwarded:    []string{"prev1, 2001:db8:cafe::17"},
+			expectedForwarded: `for=prev1, for="[2001:db8:cafe::17]"`,
+		},
+		{
+			desc:              "Quote unquoted ipv6 X-Forwarded",
+			prevXForwarded:    []string{"prev1, [2001:db8:cafe::17]"},
+			expectedForwarded: `for=prev1, for="[2001:db8:cafe::17]"`,
+		},
+		{
 			desc:              "Forwarded set",
 			prevForwarded:     []string{"for=prev"},
 			expectedForwarded: "for=prev",
