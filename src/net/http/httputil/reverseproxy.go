@@ -247,6 +247,8 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	clientIP, _, ipErr := net.SplitHostPort(req.RemoteAddr)
+	// RFC7239 allowes "unknown" to be used as an identifier if the client IP
+	// isn't available but we still want to indicate forwarding occurred.
 	if ipErr != nil {
 		clientIP = "unknown"
 	}
@@ -258,9 +260,9 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		clientProto = "https"
 	}
 
-	// build the Forwarded Header (RFC7239)
-	// - Honor a previous Forwarded header if set (ignore X-Forwarded-For)
-	// - Build a previous X-Forwarded-For into a Forwarded header if set
+	// Build the Forwarded Header (RFC7239) from the previous client IP, protocol and host.
+	// We honor and append to previous Forwarded headers if set and ignore any X-Forwarded-For headers.
+	// If there's only a previous X-Forwarded-For header, we use it to build a Forwarded header.
 	forward := fmt.Sprintf("for=%s; proto=%s; host=%s", clientIP, clientProto, req.Host)
 	if hasFwd {
 		forward = fmt.Sprintf("%s, %s", strings.Join(priorFwds, ", "), forward)
@@ -276,8 +278,8 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	outreq.Header.Set("Forwarded", forward)
 
-	// legacy X-Forwarded-For header
-	// considers only prior X-Forwarded-For headers
+	// Write the legacy X-Forwarded-For header if a previous IP is available,
+	// considering only prior X-Forwarded-For headers.
 	if ipErr == nil {
 		// If we aren't the first proxy retain prior
 		// X-Forwarded-For information as a comma+space
