@@ -263,7 +263,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// - Build a previous X-Forwarded-For into a Forwarded header if set
 	forward := fmt.Sprintf("for=%s; proto=%s; host=%s", clientIP, clientProto, req.Host)
 	if hasFwd {
-		forward = strings.Join(priorFwds, ", ") + ", " + forward
+		forward = fmt.Sprintf("%s, %s", strings.Join(priorFwds, ", "), forward)
 	} else if hasX {
 		var ips []string
 		for i := range priorXIPs {
@@ -272,7 +272,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		for i := range ips {
 			ips[i] = "for=" + escapeIPv6(strings.TrimSpace(ips[i]))
 		}
-		forward = strings.Join(ips, ", ") + ", " + forward
+		forward = fmt.Sprintf("%s, %s", strings.Join(ips, ", "), forward)
 	}
 	outreq.Header.Set("Forwarded", forward)
 
